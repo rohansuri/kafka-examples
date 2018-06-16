@@ -96,6 +96,11 @@ class Listener {
 	// TODO: according to my understanding, not specifying the topic here should fail the creation of listener?
 	// Verify?
 	// TODO: no way to get the key with which the message was published?
+	// see @MessageMapping
+	// by default the String foo below is annotated with @Payload, hence we only receive the payload
+	
+	// TODO: topics here can take a string array? How would the same listener listen to multiple topics?
+	// how would you differentiate between messages from different topics in that case?
     @KafkaListener(id = "orderListener", topics = "orders")
     public void listen(String foo) {
         System.out.println("Listener called with: " + foo);
