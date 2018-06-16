@@ -1,11 +1,7 @@
-Could've watched hour long more videos on Kafka/Event sourcing, CQRS, 3 hour microservices show with setting them up on RaspberryPi, but I guess, it is time!
 
-Just start!
-Make your attempt!  
-Improve along with way!  
-Rather than waiting to get ready for the world? Because you never will :)  
+Try out some examples with spring-kafka wrappers or maybe plain oss Kafka.
 
-"If you choose to wait until you are perfect before revealing yourself to the world,
-then the world will never know you"
-
-So here I start
+- Use transactions
+- Cover one and only one fixed business scenario for exemplary purposes
+- Understand internals (how it uses Linux Page Cache, zero copy sends, etc)
+- Replication protocol and partition's leader election
