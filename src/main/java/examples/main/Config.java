@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.context.annotation.Bean;
@@ -13,6 +14,8 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.listener.AbstractMessageListenerContainer.AckMode;
+import org.springframework.kafka.support.LogIfLevelEnabled.Level;
 
 @Configuration
 @EnableKafka // for @KafkaListener annotations to be processed
@@ -54,6 +57,9 @@ public class Config {
 	public ConcurrentKafkaListenerContainerFactory<Integer, String> kafkaListenerContainerFactory(){
 		ConcurrentKafkaListenerContainerFactory<Integer, String> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
+		factory.getContainerProperties().setCommitLogLevel(Level.INFO);
+		// TODO: difference between MANUAL and MANUAL_IMMEDIATE?
+		factory.getContainerProperties().setAckMode(AckMode.MANUAL_IMMEDIATE);
 		factory.setConsumerFactory(consumerFactory());
         return factory;
 	}
@@ -75,13 +81,17 @@ public class Config {
 	    props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092"); // TODO: kafka brokers
 	    
 	    // this is no where being used! rather the id specified in KafkaListener got picked up as "group"
-	    props.put(ConsumerConfig.GROUP_ID_CONFIG, "order-consumers"); 
+	    // props.put(ConsumerConfig.GROUP_ID_CONFIG, "order-consumers2"); 
 	    
+	    // o.s.k.l.KafkaMessageListenerContainer$ListenerConsumer is who actually commits the offset
+	    // setting this to false, doesn't work, maybe because we need to follow the spring-kafka guide?
+	    // spring-kafka's semantics are to use the AckModes, rather than this
+	    // TODO: confirm this ^? What other properties are noop? and overridden by spring-kafka?
 	    
-	    // props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true); // TODO: ??
+	    props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false); // TODO: ??
 	    // props.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, "100");
 	    props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "15000"); // when to initiate rebalance
-	    
+	    props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 	    // why have javadocs as string constant?
 	    
 	    // key? on which the partition is distributed/picked on?
@@ -95,14 +105,16 @@ class Listener {
 
 	// TODO: according to my understanding, not specifying the topic here should fail the creation of listener?
 	// Verify?
-	// TODO: no way to get the key with which the message was published?
-	// see @MessageMapping
+	
 	// by default the String foo below is annotated with @Payload, hence we only receive the payload
 	
 	// TODO: topics here can take a string array? How would the same listener listen to multiple topics?
 	// how would you differentiate between messages from different topics in that case?
-    @KafkaListener(id = "orderListener", topics = "orders")
-    public void listen(String foo) {
+	
+	// having same clientId but being in different groups, I still don't receive the message
+	// auto.offset.reset
+    @KafkaListener(id = "orderListener12", topics = "orders")
+    public void listen(ConsumerRecord<?, ?> foo) {
         System.out.println("Listener called with: " + foo);
     }
 
