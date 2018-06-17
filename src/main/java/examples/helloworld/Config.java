@@ -1,4 +1,4 @@
-package examples.main;
+package examples.helloworld;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -124,9 +124,9 @@ class Listener {
 	// having same clientId but being in different groups, I still don't receive the message
 	// auto.offset.reset
 	
-    @KafkaListener(id = "orderListener12", topics = {"orders","__consumer_offsets"})
+    @KafkaListener(id = "orderListener", topics = {"orders"})
     public void listen(ConsumerRecord<?, ?> foo) {
-        //System.out.println("Listener called with: " + foo);
+        System.out.println("Listener called with: " + foo);
     }
 
 }
