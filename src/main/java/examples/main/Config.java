@@ -84,15 +84,25 @@ public class Config {
 	    // props.put(ConsumerConfig.GROUP_ID_CONFIG, "order-consumers2"); 
 	    
 	    // o.s.k.l.KafkaMessageListenerContainer$ListenerConsumer is who actually commits the offset
-	    // setting this to false, doesn't work, maybe because we need to follow the spring-kafka guide?
-	    // spring-kafka's semantics are to use the AckModes, rather than this
-	    // TODO: confirm this ^? What other properties are noop? and overridden by spring-kafka?
+	    // setting this to false, alone doesn't work, because the AckMode by default is BATCH
+	    // which is to commit the offset after a batch of messages is received
+	    // hence apart from a false here, we need to configure the "Ack" mode on spring
+	    // to also sort of play well and make it manual commit 
 	    
 	    props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false); // TODO: ??
 	    // props.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, "100");
 	    props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "15000"); // when to initiate rebalance
 	    props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 	    // why have javadocs as string constant?
+	    
+	    // let's subscribe to __consumer_offsets topic!
+	    // but the high-level consumer we use (given by spring-kafka abstraction), we can't deserialize this consumer_offset group
+	    // it throws SerializationException
+	    // (I did read somewhere that the offsets topic also has it's schema)
+	    // but the kafka-clients jar does not include the GroupMetadataManager that knows how to deserialize them
+	    // Maybe see how kafka-console-producer does it with the GroupMetadatManager's formatter
+	    // https://stackoverflow.com/questions/35107824/in-kafka-0-9-is-there-a-way-i-can-list-out-the-offset-for-all-the-consumers-in-a
+	    props.put(ConsumerConfig.EXCLUDE_INTERNAL_TOPICS_CONFIG, false);
 	    
 	    // key? on which the partition is distributed/picked on?
 	    props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class);
@@ -113,9 +123,10 @@ class Listener {
 	
 	// having same clientId but being in different groups, I still don't receive the message
 	// auto.offset.reset
-    @KafkaListener(id = "orderListener12", topics = "orders")
+	
+    @KafkaListener(id = "orderListener12", topics = {"orders","__consumer_offsets"})
     public void listen(ConsumerRecord<?, ?> foo) {
-        System.out.println("Listener called with: " + foo);
+        //System.out.println("Listener called with: " + foo);
     }
 
 }
