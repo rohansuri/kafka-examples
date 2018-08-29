@@ -1,0 +1,47 @@
+Legend:
+>> To show
+
+High level
+
+Producer:
+Producer produces stream of operations, example
++1, +2, *3, ....
+Keyed by userid
+It should take these from stdin
+
+We probably would need another version "FastProducer"
+That quickly produces first N natural numbers, given N as parameter?
+>> To show batching in effect
+
+>> Partitioning strategy (hash on userid)
+
+Target topic:
+"Calculate" 
+num.of.partitions=2
+
+>> Show two different user ids nicely getting hashed to two different partitions
+   (i.e enter directory on server and show different log segments maintained in different
+   directories)
+
+>> iostat no activity for broker pid (everything happens with page cache)
+
+>> consumer group first with only one consumer then two
+   partition rebalance and start producing newer messages and show how now the two messages are 
+   consumed by two different consumers
+
+Finally we show compacted output topic "Calculated"
+>> Show compacted results for each user
+For this we need to set the segment size really small, so that it only holds one entry
+(pretty predictable after seeing userid size + operation size)
+The log compaction lag also should be 0
+And retention check should be low too
+(make note...all of this only for the demo)
+
+important:
+anytime you want to show something, that'd require a property change
+for example, index.interval.bytes?
+create a topic, produce to that and show it
+don't modify your original topics
+that's your demo
+nothing should go unpredictable/unthought of before
+
