@@ -1,0 +1,3 @@
+./bin/kafka-topics.sh --zookeeper localhost:2181 --create --topic calculate --partitions 2 --replication-factor 1
+
+Two partitions (operations by user Foo go into p1, operations by user Bar go into p2)

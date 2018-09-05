@@ -21,5 +21,9 @@
 		<appender-ref ref="STDOUT" />
 	</logger>
 
+	<logger name="org.apache.kafka.clients.consumer" level="DEBUG" additivity="false">
+		<appender-ref ref="STDOUT" />
+	</logger>
+
 
 </configuration>

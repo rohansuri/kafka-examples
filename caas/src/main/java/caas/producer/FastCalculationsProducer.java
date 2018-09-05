@@ -10,11 +10,17 @@ import java.util.Properties;
 import java.util.Scanner;
 
 /* To see batching taking place
-   ./bin/kafka-run-class.sh kafka.tools.DumpLogSegments --files /tmp/kafka-logs/calculate-0/*6.log
+   ./bin/kafka-run-class.sh kafka.tools.DumpLogSegments --files /tmp/kafka-logs/calculate-0/*6.log --print-data-log
    shows different offsets but the same position in the log (hence the MessageSet abstraction)
 
    What if segment size is too small to fit the batch?
-   Does the batch then split on the server side?
+   Does the batch then split on the server side? or does it reject the client request?
+
+   Relevant client-side APIs to look at for batching:
+   - RecordAccumulator.ready, expiredBatches
+   - MemoryRecordsBuilder
+   - Sender.run
+   - KafkaProducer.send
 */
 public class FastCalculationsProducer {
     private static final Logger log = LoggerFactory.getLogger(FastCalculationsProducer.class);
@@ -40,8 +46,9 @@ public class FastCalculationsProducer {
     }
 
     private static void produce(Scanner in, Producer<String, String> producer) {
-        for(int i = 1; i <= 5; i++){
+        for(int i = 1; i <= 4; i++){
             ProducerRecord<String, String> record = new ProducerRecord<>("calculate", "foo", "+" + i);
+            // sends are always async
             producer.send(record);
         }
     }
