@@ -10,6 +10,9 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.*;
 
+/**
+ * Consumes the "calculate" topic from the beginning because it keeps all state in memory
+ */
 public class InProcessStateConsumer {
     private static final Logger log = LoggerFactory.getLogger(InProcessStateConsumer.class);
 
