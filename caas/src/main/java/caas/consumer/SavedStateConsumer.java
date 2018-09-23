@@ -7,22 +7,24 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
+import org.apache.kafka.common.requests.IsolationLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class SavedStateConsumer {
     private static final Logger log = LoggerFactory.getLogger(SavedStateConsumer.class);
     private static final String CONSUMER_GROUP = "calculations-saved-state-consumer-group";
-    private static Map<String, Integer> userState;
 
     public static void main(String[] args) {
         Properties properties = new Properties();
         properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
         properties.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         properties.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         // properties.put(ConsumerConfig.CLIENT_ID_CONFIG, "calculations-saved-state-consumer");
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, CONSUMER_GROUP);
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
@@ -41,13 +43,25 @@ public class SavedStateConsumer {
         //  - produce result record
         //  - commit consuming topic
         // this atomically (i.e in a transaction)
-        Consumer<String, String> consumer = new KafkaConsumer<>(properties);
-        consumer.subscribe(Collections.singletonList("calculate"));
 
-        // oh, we must've crashed and just come up -- or maybe a graceful restart
+        Map<String, Integer> userState = new HashMap<>();
+        Consumer<String, String> consumer = new KafkaConsumer<>(properties);
+        consumer.subscribe(Collections.singletonList("calculate"), new Rebalance(userState));
+
+/*        // oh, we must've crashed and just come up -- or maybe a graceful restart
         // we gotta rebuild our state first
         // let's do it by consuming the stateStore topic first
-        userState = buildUserState(consumer.assignment());
+        userState.putAll(buildUserState(consumer.assignment()));
+
+        // the stateStores don't exist
+        if(userState.isEmpty()){
+            log.info("State stores don't exist, will consume from beginning");
+            consumer.poll(0);
+            consumer.seekToBeginning(consumer.assignment());
+        }
+
+        log.info("UserState built from StateStores before resuming consumption: {}", userState.toString());*/
+
         Producer<String, String> producer = setupProducer();
         producer.initTransactions();
 
@@ -69,7 +83,7 @@ public class SavedStateConsumer {
                     }
 
                     currentOffsets.put(new TopicPartition(record.topic(), record.partition()),
-                            new OffsetAndMetadata(record.offset(), ""));
+                            new OffsetAndMetadata(record.offset() + 1, ""));
 
                     userState.put(record.key(), doOperation(userState.get(record.key()),
                             record.value().charAt(0),
@@ -77,6 +91,7 @@ public class SavedStateConsumer {
 
                     producer.send(new ProducerRecord<>(getStateStoreTopic(new TopicPartition(record.topic(),
                                                                           record.partition())),
+                                                        record.key(), // userID based compaction
                                                         String.valueOf(userState.get(record.key()))));
                 }
                 log.info(userState.toString());
@@ -106,6 +121,10 @@ public class SavedStateConsumer {
         properties.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         properties.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+
+        // important for the state store
+        properties.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, IsolationLevel.READ_COMMITTED.toString().toLowerCase(Locale.ROOT));
+
         // we never even want to commit
         // since we consume the entire state store each time
         // (this is bad, but for time being...)
@@ -122,14 +141,36 @@ public class SavedStateConsumer {
         // because there's only one partition to consume
         consumer.assign(stateStores);
 
+        try {
+            consumer.poll(0);
+        }
+        // not assigned any topics/partitions -- maybe/mostly because it's the very first launch!
+        // when the state stores don't even exist yet
+        // this logic is wrong/incomplete! What if while restarts the topic partitions got resized?
+        // and for some of the TPs we already had the state store? but for this new one
+        // we don't? we should at least the stateStores for those TPs for which they exist
+        // TODO: at least build state store for those which exist
+        catch (IllegalStateException e){
+            return userState;
+        }
+
+        consumer.seekToBeginning(stateStores);
+
         Map<TopicPartition, Long> endOffsets = consumer.endOffsets(stateStores);
+
+        log.info("End offsets for StateStores: {}", endOffsets);
 
         Map<TopicPartition, Long> currentConsumption = new HashMap<>();
         ConsumerRecords<String, String> records;
 
         do {
             records = consumer.poll(Duration.ofMillis(5000));
+
             for(ConsumerRecord<String, String> record: records){
+                log.info("StateStore consumption: key:{}, value:{}, topic:{}, partition:{}, offset:{}", record.key(),
+                        record.value(), record.topic(), record.partition(), record.offset());
+                // safe to simply put for any given key, since StateStores are compacted topics
+                // duplicate keys would mean the later is an update for the same key
                 userState.put(record.key(), Integer.parseInt(record.value()));
                 currentConsumption.put(new TopicPartition(record.topic(), record.partition()), record.offset());
             }
@@ -137,8 +178,10 @@ public class SavedStateConsumer {
             // if we reached the end of all partitions that are assigned to me, then quit loop
             // since I'm going to be the one producing next...
 
-        } while (records.isEmpty() && allConsumed(endOffsets, currentConsumption));
+        } while (!records.isEmpty() && !allConsumed(endOffsets, currentConsumption));
         // TODO: do we need allConsumed? Isn't isEmpty() enough?
+
+        consumer.close();
 
         return userState;
     }
@@ -174,11 +217,19 @@ public class SavedStateConsumer {
         props.put("bootstrap.servers", "localhost:9092");
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "state-store-producer-" + ThreadLocalRandom.current().nextInt());
+
+        log.info("Created state store producer with transaction.id {}", props.get(ProducerConfig.TRANSACTIONAL_ID_CONFIG));
 
         return new KafkaProducer<>(props);
     }
 
     private static class Rebalance implements ConsumerRebalanceListener {
+        private final Map<String, Integer> userState;
+
+        public Rebalance(Map<String, Integer> userState){
+            this.userState = userState;
+        }
 
         @Override
         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
@@ -190,8 +241,10 @@ public class SavedStateConsumer {
             // we're currently rebuilding the state for all partitions
             // even for all of those for which we already have state built
             // (i.e the ones which got assigned again back to us)
-            // this is only for the example
-            userState = buildUserState(partitions);
+            // this is only for the example!
+            log.info("Partitions Rebalanced, build local state by consuming StateStores for {}", partitions);
+            userState.clear();
+            userState.putAll(buildUserState(partitions));
         }
     }
 

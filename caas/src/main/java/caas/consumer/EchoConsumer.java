@@ -29,6 +29,7 @@ public class EchoConsumer {
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, "calculations-echo-consumer-group");
         properties.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 1 * 1000);
         // properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        properties.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 5 * 1000);
 
         Consumer<String, String> consumer = new KafkaConsumer<String, String>(properties);
         consumer.subscribe(Collections.singletonList("calculate"));
